@@ -1,0 +1,17 @@
+html, body {
+  background-color: #FAF7F0;
+  color: #1C1814;
+}
+
+/* 确保所有元素继承字体颜色，除非显式覆盖 */
+* {
+  color: inherit;
+  background-color: transparent; /* 避免子元素背景色干扰整体背景 */
+}
+
+/* 恢复特定元素可能需要的默认背景（可选，保持透明通常更安全） */
+input, textarea, select, button {
+  background-color: #FAF7F0; /* 表单控件保持与页面一致 */
+  color: #1C1814;
+  border: 1px solid #1C1814; /* 可选：增加边框以提升可见性 */
+}
