@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>xiaozhong1906</title>
+    
+    <link rel="stylesheet" href="../qita/bwjk.css">
+    <link rel="stylesheet" href="../qita/ziti.css">
+</head>
+<body>
+
+<h2>通过使用termux实现在Android设备中下载运行ai酒馆的一键安装shell文件</h2>
+
+<h3>准备工作一个termux，和一键安装ai酒馆工具</h3>
+    <a href="https://pan.huang1111.cn/s/y5yZwF6">termux下载以及一键安装脚本</a>
+    
+ <code><pre>
+#!/data/data/com.termux/files/usr/bin/bash
+set -Eeuo pipefail
+
+APP_DIR="$HOME/SillyTavern"
+REPO_URL="https://github.com/SillyTavern/SillyTavern.git"
+# 重装时需要从旧目录恢复的用户数据（角色卡、聊天记录、配置、密钥）
+KEEP_ITEMS=(data config.yaml secrets.json)
+
+say()  { printf '\n[酒馆安装器] %s\n' "$*"; }
+warn() { printf '\n[提示] %s\n' "$*"; }
+fail() { printf '\n[错误] %s\n' "$*" >&2; exit 1; }
+
+if ! command -v pkg >/dev/null 2>&1; then
+  fail "未检测到 Termux。请在 Termux 应用中运行此脚本，不要在普通 Android 终端或电脑上运行。"
+fi
+
+PKG_UPDATED=0
+update_pkgs() {
+  if [[ "$PKG_UPDATED" -eq 0 ]]; then
+    say "更新 Termux 软件包索引并升级已安装的软件包……"
+    pkg update -y
+    pkg upgrade -y
+    PKG_UPDATED=1
+  fi
+}
+
+# 系统依赖表：命令名|对应的 pkg 包名|用途
+REQUIRED_DEPS=(
+  "git|git|克隆和更新 SillyTavern"
+  "node|nodejs-lts|运行 SillyTavern"
+  "npm|nodejs-lts|安装 Node.js 依赖"
+  "nano|nano|编辑配置文件"
+)
+MIN_NODE_MAJOR=18
+MISSING_PKGS=()
+
+add_missing() {
+  local p
+  for p in "${MISSING_PKGS[@]:-}"; do
+    [[ "$p" == "$1" ]] && return 0
+  done
+  MISSING_PKGS+=("$1")
+}
+
+# 检测缺少的系统依赖，结果写入 MISSING_PKGS（已去重）
+collect_missing_pkgs() {
+  MISSING_PKGS=()
+  local entry cmd pkgname desc
+  for entry in "${REQUIRED_DEPS[@]}"; do
+    IFS='|' read -r cmd pkgname desc <<<"$entry"
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      warn "缺少依赖：$cmd（$desc），需要安装 $pkgname"
+      add_missing "$pkgname"
+    fi
+  done
+
+  # node 已存在但版本过低
+  if command -v node >/dev/null 2>&1; then
+    local major
+    major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+    [[ "$major" =~ ^[0-9]+$ ]] || major=0
+    if (( major < MIN_NODE_MAJOR )); then
+      warn "Node.js 版本过低（当前 v$major，需要 v$MIN_NODE_MAJOR 及以上），需要更新 nodejs-lts"
+      add_missing "nodejs-lts"
+    fi
+  fi
+
+  # 32 位设备需要 esbuild 兼容依赖
+  local arch
+  arch="$(uname -m 2>/dev/null || true)"
+  case "$arch" in
+    armv7l|arm|i686|i386)
+      if ! command -v esbuild >/dev/null 2>&1; then
+        warn "检测到可能的 32 位设备，缺少 esbuild 兼容依赖，需要安装 esbuild"
+        add_missing "esbuild"
+      fi
+      ;;
+  esac
+}
+
+# 检测系统依赖；缺少就用 pkg 安装，装完再次验证
+ensure_runtime() {
+  say "检测系统依赖（git / Node.js / npm / nano）……"
+  collect_missing_pkgs
+
+  if (( ${#MISSING_PKGS[@]} == 0 )); then
+    say "系统依赖齐全。"
+    return 0
+  fi
+
+  say "尝试用 pkg 安装缺少的依赖：${MISSING_PKGS[*]}"
+  update_pkgs
+  if ! pkg install -y "${MISSING_PKGS[@]}"; then
+    warn "首次安装失败，刷新软件源后重试一次……"
+    pkg update -y || true
+    pkg install -y "${MISSING_PKGS[@]}" \
+      || fail "依赖安装失败：${MISSING_PKGS[*]}。请检查网络，或运行 termux-change-repo 切换镜像源后重新运行此脚本。"
+  fi
+
+  collect_missing_pkgs
+  if (( ${#MISSING_PKGS[@]} > 0 )); then
+    fail "依赖安装后仍不可用：${MISSING_PKGS[*]}。请手动运行 pkg install ${MISSING_PKGS[*]} 查看具体报错。"
+  fi
+  say "系统依赖已全部就绪。"
+}
+
+# 检测安装状态。
+# 返回 0：完整可用；2：仅依赖(node_modules)不完整，可原地修复；1：不完整，需要重装
+REASON=""
+check_install() {
+  REASON=""
+  [[ -d "$APP_DIR" ]] || { REASON="目录不存在"; return 1; }
+
+  local f
+  for f in package.json server.js start.sh; do
+    [[ -s "$APP_DIR/$f" ]] || { REASON="缺少核心文件：$f"; return 1; }
+  done
+
+  git -C "$APP_DIR" rev-parse --verify HEAD >/dev/null 2>&1 \
+    || { REASON="Git 仓库损坏或克隆未完成"; return 1; }
+
+  node -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$APP_DIR/package.json" >/dev/null 2>&1 \
+    || { REASON="package.json 损坏"; return 1; }
+
+  (cd "$APP_DIR" && node --check server.js >/dev/null 2>&1) \
+    || { REASON="server.js 语法检查未通过（文件可能不完整）"; return 1; }
+
+  [[ -d "$APP_DIR/node_modules" ]] \
+    || { REASON="依赖目录 node_modules 不存在"; return 2; }
+
+  local missing
+  missing="$(cd "$APP_DIR" && node -e '
+    const fs = require("fs");
+    const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+    const miss = Object.keys(p.dependencies || {}).filter(d => !fs.existsSync("node_modules/" + d));
+    if (miss.length) { console.log(miss.slice(0, 5).join(", ") + (miss.length > 5 ? " 等" : "")); process.exit(1); }
+  ' 2>/dev/null)" || { REASON="依赖缺失：${missing:-未知}"; return 2; }
+
+  return 0
+}
+
+repair_deps() {
+  say "尝试原地修复依赖（保留现有数据）……"
+  (cd "$APP_DIR" && npm install --no-audit --no-fund --loglevel=error --no-progress --omit=dev --force)
+}
+
+choose_branch() {
+  local default="${1:-release}" choice=""
+  if [[ -t 0 ]]; then
+    printf '选择要安装的 SillyTavern 分支：\n  1) release（稳定版）\n  2) staging（测试版）\n'
+    local def_num=1
+    [[ "$default" == "staging" ]] && def_num=2
+    read -r -p "请输入 1 或 2 [$def_num]: " choice
+    choice="${choice:-$def_num}"
+    case "$choice" in
+      1) BRANCH="release" ;;
+      2) BRANCH="staging" ;;
+      *) fail "选择无效，请重新运行并输入 1 或 2。" ;;
+    esac
+  else
+    BRANCH="$default"
+  fi
+}
+
+# 全新安装 / 重装。重装时旧目录整体改名备份，不会被删除。
+install_fresh() {
+  local backup_dir="" old_branch="release"
+
+  if [[ -e "$APP_DIR" ]]; then
+    backup_dir="$HOME/SillyTavern.backup-$(date +%Y%m%d-%H%M%S)"
+    say "将旧目录备份到：$backup_dir"
+    local b
+    b="$(git -C "$APP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    [[ "$b" == "release" || "$b" == "staging" ]] && old_branch="$b"
+    mv "$APP_DIR" "$backup_dir"
+  fi
+
+  choose_branch "$old_branch"
+
+  say "从 GitHub 克隆 SillyTavern（分支：$BRANCH）……"
+  if ! git clone --depth 1 --branch
+</pre></code>
+<script src="../qita/ddma.js"></script>
+<p>下载完成给予所以存储权限后输入</p>
+<code><pre>
+chmod +x install_sillytavern_termux.sh && ./install_sillytavern_termux.sh
+</pre></code>
+<script src="../qita/ddma.js"></script>
