@@ -1,6 +1,6 @@
 @font-face {
     font-family: 'MyFont';
-    src: url('../qita/ziti.otf') format('opentype');
+    src: url('../qita/ziti.ttf') format('opentype');
 }
 body {
     font-family: 'MyFont', sans-serif;
