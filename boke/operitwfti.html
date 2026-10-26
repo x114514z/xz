@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>xiaozhong1906</title>
+    
+    <link rel="stylesheet" href="../qita/bwjk.css">
+    <link rel="stylesheet" href="../qita/ziti.css">
+</head>
+<body>
+    </h1>
+    
+    <h2>解决operit中ai使用shell权限禁止启动应用问题</h2>
+    <hr>
+    <iframe src="//player.bilibili.com/player.html?isOutside=true&aid=117077822147550&bvid=BV16nur6GE3y&cid=40821653571&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
+    
+    <hr>
+    <p>直接给ai发送以下内容</p>
+   
+<pre><code>
+请帮我恢复所有被 shell 权限禁用/冻结的应用。当前现象：点击应用时提示“无法使用，该应用由 shell 管理”。这些应用是被之前的 shell 命令（如 `pm disable-user`）禁用或冻结的，并非卸载。请按照以下步骤操作：第一步：先列出所有被禁用的应用，不要直接批量启用。执行adb shell pm list packages -d将输出结果发送我确认，避免恢复不该恢复的系统关键组件。第二步：对确认需要恢复的包名，执行启用命令。*优先使用adb shell pm enable --user 0 <包名>如果返回 Operation not allowed`、`SecurityException` 或无效，改用备选方案：先执行 `adb shell pm disable-user --user 0 <包名>`，再执行 `adb shell pm enable --user 0 <包名>第三步：如果 `pm enable` 持续失败，再尝试安装恢复：adb shell pm install-existing --user 0 <包名>这条命令适用于原本被 `pm uninstall --user 0` 移除但未彻底卸载的情况。
+</code></pre>
+<script src="../qita/ddma.js"></script>
+
+<p>返回发送给ai尝试如果出现如图片中那样那么到接下来的第二部分</p>
+
+<img src="https://xiaozhong1906.cn/Screenshot_20261026_125214.jpg"style="max-width: 120px; max-height: 120px;"/>
+
+<hr>
+
+<h3>准备工作</h3>
+<h4>1.是否设备是否为Android11系统吗？
+（以及Android11及以上版本）</h4><br>
+<button onclick="document.getElementById('section1').scrollIntoView()">
+  是
+</button>
+<button onclick="document.getElementById('section2').scrollIntoView()">
+  不是（无USB口需OTG）
+</button>
+<hr>
+<h2 id="section2">Android 11版本以下</h3></h2>
+<button onclick="document.getElementById('section3').scrollIntoView()">
+  windwos
+</button>
+<button onclick="document.getElementById('section4').scrollIntoView()">
+  Linux
+<button onclick="document.getElementById('section5').scrollIntoView()">
+  macOS
+</button>
+<button onclick="document.getElementById('section6').scrollIntoView()">
+  Android
+</button>
+<p>下载Android SDK（在有windwos或者macOS，Linux系统中）或者下载ashell（在主动设备中为Android设备）</p>
+
+<a href="https://developer.android.google.cn/tools/releases/platform-tools?hl=zh-cn">Android  SDK下载</a>
+<a href="https://apt.izzysoft.de/fdroid/index/apk/in.sunilpaulmathew.ashell">ashell下载</a>
+
+<h2 id="section3"><h1>windwos执行文件</h1>
+
+<pre><code>
+@echo off
+setlocal enabledelayedexpansion
+chcp 65001 >nul
+title Android SDK 一键配置与 Shell 限制解除
+
+:: ========== 配置区（可按需修改） ==========
+set "SDK_DIR=%USERPROFILE%\Android\Sdk"
+set "CMDLINE_DIR=%SDK_DIR%\cmdline-tools\latest"
+set "SDKMANAGER=%CMDLINE_DIR%\bin\sdkmanager.bat"
+set "ADB=%SDK_DIR%\platform-tools\adb.exe"
+set "CMDLINE_URL=https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
+set "ZIP_FILE=%TEMP%\cmdline-tools.zip"
+:: ==========================================
+
+echo ============================================
+echo  Android SDK 一键配置与后台限制解除
+echo ============================================
+echo.
+
+:: ---------- 1. 下载并解压 SDK 命令行工具 ----------
+if exist "%SDKMANAGER%" (
+    echo [1/6] 已检测到 sdkmanager，跳过下载。
+    goto :setup_env
+)
+
+echo [1/6] 正在下载 Android SDK 命令行工具...
+powershell -NoProfile -Command "Invoke-WebRequest -Uri '%CMDLINE_URL%' -OutFile '%ZIP_FILE%'"
+if not exist "%ZIP_FILE%" (
+    echo [错误] 下载失败，请检查网络或代理设置。
+    pause & exit /b 1
+)
+
+echo [1/6] 正在解压...
+powershell -NoProfile -Command "Expand-Archive -Path '%ZIP_FILE%' -DestinationPath '%TEMP%\cmdline-tools-extract' -Force"
+
+:: 标准结构要求：cmdline-tools\latest\bin\sdkmanager.bat
+if not exist "%SDK_DIR%\cmdline-tools" mkdir "%SDK_DIR%\cmdline-tools"
+if exist "%CMDLINE_DIR%" rmdir /s /q "%CMDLINE_DIR%"
+move "%TEMP%\cmdline-tools-extract\cmdline-tools" "%CMDLINE_DIR%" >nul 2>&1
+if errorlevel 1 (
+    :: 有些版本解压后可能直接是 bin/lib 等，需要多一层处理
+    xcopy "%TEMP%\cmdline-tools-extract" "%CMDLINE_DIR%\" /E /I /Y >nul
+)
+rmdir /s /q "%TEMP%\cmdline-tools-extract" 2>nul
+del "%ZIP_FILE%" 2>nul
+
+if not exist "%SDKMANAGER%" (
+    echo [错误] SDK 命令行工具解压后未找到 sdkmanager.bat，请手动检查 %CMDLINE_DIR%
+    pause & exit /b 1
+)
+echo [1/6] SDK 命令行工具就绪。
+
+:setup_env
+:: ---------- 2. 配置环境变量（当前会话 + 永久） ----------
+echo [2/6] 正在配置环境变量...
+
+:: 当前会话立即生效
+set "ANDROID_HOME=%SDK_DIR%"
+set "PATH=%PATH%;%CMDLINE_DIR%\bin;%SDK_DIR%\platform-tools"
+
+:: 永久写入用户环境变量（setx 有 1024 字符截断风险，但用于 PATH 追加通常可用）
+setx ANDROID_HOME "%SDK_DIR%" >nul 2>&1
+for /f "skip=2 tokens=2,*" %%a in ('reg query HKCU\Environment /v PATH 2^>nul') do set "USER_PATH=%%b"
+if not defined USER_PATH set "USER_PATH="
+echo %USER_PATH% | find /i "%CMDLINE_DIR%\bin" >nul
+if errorlevel 1 setx PATH "%USER_PATH%;%CMDLINE_DIR%\bin;%SDK_DIR%\platform-tools" >nul 2>&1
+
+echo [2/6] 环境变量已配置（新开的 CMD 窗口会永久生效）。
+
+:: ---------- 3. 安装 platform-tools（adb） ----------
+echo [3/6] 正在通过 sdkmanager 安装 platform-tools...
+call "%SDKMANAGER%" --install "platform-tools" <nul >nul 2>&1
+if not exist "%ADB%" (
+    echo [错误] adb 未安装成功，请手动运行：
+    echo   "%SDKMANAGER%" --install "platform-tools"
+    pause & exit /b 1
+)
+echo [3/6] adb 就绪：%ADB%
+
+:: ---------- 4. 启动 ADB 并等待设备授权 ----------
+echo.
+echo [4/6] 正在启动 ADB 并等待设备连接...
+"%ADB%" start-server >nul 2>&1
+
+:wait_device
+:: 清空临时状态文件
+set "DEV_STATE="
+for /f "skip=1 tokens=1,2" %%a in ('"%ADB%" devices 2^>nul') do (
+    if "%%b"=="device" set "DEV_STATE=ok"
+    if "%%b"=="unauthorized" set "DEV_STATE=unauthorized"
+)
+
+if "%DEV_STATE%"=="ok" goto :device_ready
+if "%DEV_STATE%"=="unauthorized" (
+    echo.
+    echo 检测到设备，但尚未授权！
+    echo 请立即在手机屏幕上操作：
+    echo   1. 确保已开启「开发者选项」→「USB 调试」。
+    echo   2. 连接电脑后，手机会弹出「允许 USB 调试吗？」对话框。
+    echo   3. 勾选「始终允许使用这台计算机进行调试」，然后点击「允许」。
+    echo.
+    echo 如果未弹出窗口，请尝试：
+    echo   - 拔插 USB 数据线；
+    echo   - 在开发者选项中点击「撤销 USB 调试授权」，然后重新插线。
+    echo.
+    timeout /t 5 >nul
+    goto :wait_device
+)
+
+:: 没有任何设备
+echo.
+echo 未检测到设备。请用 USB 数据线连接手机，并开启 USB 调试。
+echo 脚本将持续等待...
+timeout /t 5 >nul
+goto :wait_device
+
+:device_ready
+echo.
+echo [4/6] 设备已连接并授权，继续执行。
+
+:: ---------- 5. 检查被挂起的应用 ----------
+echo.
+echo [5/6] 正在检查被挂起的应用...
+echo.
+
+set "SUSPENDED_COUNT=0"
+set "SUSPENDED_LIST="
+
+:: 遍历所有第三方应用，检查 dumpsys 输出中是否含 suspended=true
+for /f "delims=" %%p in ('"%ADB%" shell pm list packages -3 2^>nul') do (
+    set "PKG=%%p"
+    set "PKG=!PKG:package:=!"
+
+    set "IS_SUSPENDED="
+    for /f "delims=" %%s in ('"%ADB%" shell dumpsys package !PKG! 2^>nul ^| findstr /c:"suspended=true"') do (
+        set "IS_SUSPENDED=1"
+    )
+
+    if defined IS_SUSPENDED (
+        echo   [已挂起] !PKG!
+        set /a SUSPENDED_COUNT+=1
+        set "SUSPENDED_LIST=!SUSPENDED_LIST! !PKG!"
+    )
+)
+
+if %SUSPENDED_COUNT%==0 (
+    echo 未发现被挂起的第三方应用。
+    goto :end
+)
+
+echo.
+echo 共发现 %SUSPENDED_COUNT% 个被挂起的应用。
+echo.
+
+:: ---------- 6. 解除挂起 ----------
+echo [6/6] 正在解除上述应用的挂起状态...
+for %%p in (%SUSPENDED_LIST%) do (
+    echo   解除：%%p
+    "%ADB%" shell pm unsuspend %%p >nul 2>&1
+    if errorlevel 1 (
+        echo     [失败] 无法解除 %%p，可能需要系统权限或手动处理。
+    ) else (
+        echo     [成功] %%p 已恢复。
+    )
+)
+
+echo.
+echo ============================================
+echo 全部完成。
+echo 提示：被挂起的应用恢复后，桌面图标应恢复正常。
+echo ============================================
+
+:end
+pause
+endlocal
+</code></pre>
+<script src="../qita/ddma.js"></script>
+<h2 id="section4">Linux执行文件<h2>（使用前需要执行chmod +x 文件名）</h2></h1>
+<pre><code>
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ========== 配置区 ==========
+SDK_DIR="$HOME/Android/Sdk"
+CMDLINE_DIR="$SDK_DIR/cmdline-tools/latest"
+ADB="$SDK_DIR/platform-tools/adb"
+CMDLINE_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+# ============================
+
+info()  { echo -e "\033[32m[INFO]\033[0m $*"; }
+warn()  { echo -e "\033[33m[WARN]\033[0m $*"; }
+error() { echo -e "\033[31m[ERROR]\033[0m $*" >&2; exit 1; }
+
+# ---------- 1. 检测包管理器 ----------
+detect_pkg_manager() {
+    if   command -v apt-get &>/dev/null; then echo "apt"
+    elif command -v dnf     &>/dev/null; then echo "dnf"
+    elif command -v yum     &>/dev/null; then echo "yum"
+    elif command -v zypper  &>/dev/null; then echo "zypper"
+    elif command -v pacman  &>/dev/null; then echo "pacman"
+    elif command -v pkg     &>/dev/null; then echo "pkg"
+    else echo "unknown"
+    fi
+}
+
+install_pkgs() {
+    local pm="$1"; shift
+    case "$pm" in
+        apt)    sudo apt-get update -qq && sudo apt-get install -y "$@" ;;
+        dnf)    sudo dnf install -y "$@" ;;
+        yum)    sudo yum install -y "$@" ;;
+        zypper) sudo zypper --non-interactive install "$@" ;;
+        pacman) sudo pacman -Sy --noconfirm "$@" ;;
+        pkg)    sudo pkg install -y "$@" ;;
+        *)      error "不支持的包管理器: $pm" ;;
+    esac
+}
+
+PM=$(detect_pkg_manager)
+if [[ "$PM" == "unknown" ]]; then
+    error "无法检测到受支持的包管理器（apt/dnf/yum/zypper/pacman/pkg）。"
+fi
+info "检测到包管理器: $PM"
+
+# ---------- 2. 安装依赖（unzip、wget/curl、openjdk） ----------
+info "安装必要依赖..."
+case "$PM" in
+    apt)    install_pkgs apt unzip wget curl openjdk-17-jdk-headless 2>/dev/null || \
+            install_pkgs apt unzip wget curl default-jdk-headless ;;
+    dnf|yum) install_pkgs "$PM" unzip wget curl java-17-openjdk-headless 2>/dev/null || \
+             install_pkgs "$PM" unzip wget curl java-latest-openjdk-headless ;;
+    zypper) install_pkgs zypper unzip wget curl java-17-openjdk-headless ;;
+    pacman) install_pkgs pacman unzip wget curl jdk-openjdk ;;
+    pkg)    install_pkgs pkg unzip wget curl openjdk17 ;;
+esac
+info "依赖安装完成。"
+
+# ---------- 3. 下载并解压 Android SDK 命令行工具 ----------
+if [[ -f "$CMDLINE_DIR/bin/sdkmanager" ]]; then
+    info "sdkmanager 已存在，跳过下载。"
+else
+    info "下载 Android SDK 命令行工具..."
+    TMP_ZIP="/tmp/cmdline-tools.zip"
+    if command -v wget &>/dev/null; then
+        wget -q -O "$TMP_ZIP" "$CMDLINE_URL"
+    else
+        curl -fsSL -o "$TMP_ZIP" "$CMDLINE_URL"
+    fi
+
+    mkdir -p "$SDK_DIR/cmdline-tools"
+    TMP_EXTRACT="/tmp/cmdline-tools-extract"
+    rm -rf "$TMP_EXTRACT"
+    unzip -q "$TMP_ZIP" -d "$TMP_EXTRACT"
+
+    # 标准结构：cmdline-tools/latest/bin/sdkmanager
+    rm -rf "$CMDLINE_DIR"
+    mv "$TMP_EXTRACT/cmdline-tools" "$CMDLINE_DIR"
+    rm -rf "$TMP_EXTRACT" "$TMP_ZIP"
+    info "SDK 命令行工具解压完成。"
+fi
+
+# ---------- 4. 配置环境变量（写入 shell 配置文件） ----------
+PROFILE="$HOME/.bashrc"
+[[ "$SHELL" == *"zsh"* ]] && PROFILE="$HOME/.zshrc"
+
+if ! grep -q "ANDROID_HOME=$SDK_DIR" "$PROFILE" 2>/dev/null; then
+    {
+        echo ""
+        echo "# Android SDK"
+        echo "export ANDROID_HOME=\"$SDK_DIR\""
+        echo "export PATH=\"\$PATH:\$ANDROID_HOME/cmdline-tools/latest/bin:\$ANDROID_HOME/platform-tools\""
+    } >> "$PROFILE"
+    info "环境变量已写入 $PROFILE（新终端生效）。"
+fi
+
+# 当前会话立即生效
+export ANDROID_HOME="$SDK_DIR"
+export PATH="$PATH:$CMDLINE_DIR/bin:$SDK_DIR/platform-tools"
+
+# ---------- 5. 安装 platform-tools（adb） ----------
+if [[ ! -f "$ADB" ]]; then
+    info "安装 platform-tools..."
+    yes | "$CMDLINE_DIR/bin/sdkmanager" --install "platform-tools" >/dev/null 2>&1 || true
+fi
+[[ -f "$ADB" ]] || error "adb 安装失败，请手动运行: sdkmanager --install platform-tools"
+info "adb 就绪: $ADB"
+
+# ---------- 6. 启动 ADB 并等待设备授权 ----------
+info "启动 ADB 并等待设备连接..."
+"$ADB" start-server >/dev/null 2>&1
+
+while true; do
+    DEV_STATE=""
+    while IFS= read -r line; do
+        [[ "$line" == *"unauthorized"* ]] && DEV_STATE="unauthorized"
+        [[ "$line" == *"device"* && "$line" != *"unauthorized"* ]] && DEV_STATE="ok"
+    done < <("$ADB" devices 2>/dev/null | tail -n +2)
+
+    if [[ "$DEV_STATE" == "ok" ]]; then
+        info "设备已连接并授权。"
+        break
+    elif [[ "$DEV_STATE" == "unauthorized" ]]; then
+        warn "检测到设备，但尚未授权！"
+        echo "  请在手机屏幕上点击「允许 USB 调试」，并勾选「始终允许」。"
+        echo "  若未弹窗，请拔插 USB 或撤销授权后重试。"
+    else
+        echo "  未检测到设备，请用 USB 连接手机并开启 USB 调试..."
+    fi
+    sleep 5
+done
+
+# ---------- 7. 检查并解除被挂起的应用 ----------
+info "检查被挂起的第三方应用..."
+
+SUSPENDED_LIST=()
+while IFS= read -r pkg_line; do
+    PKG="${pkg_line#package:}"
+    # 检查 dumpsys 输出中是否含 suspended=true
+    if "$ADB" shell dumpsys package "$PKG" 2>/dev/null | grep -q "suspended=true"; then
+        SUSPENDED_LIST+=("$PKG")
+    fi
+done < <("$ADB" shell pm list packages -3 2>/dev/null)
+
+if [[ ${#SUSPENDED_LIST[@]} -eq 0 ]]; then
+    info "未发现被挂起的第三方应用。"
+else
+    info "共发现 ${#SUSPENDED_LIST[@]} 个被挂起的应用，开始解除..."
+    for pkg in "${SUSPENDED_LIST[@]}"; do
+        echo -n "  解除 $pkg ... "
+        if "$ADB" shell pm unsuspend "$pkg" 2>/dev
+</code></pre>
+<script src="../qita/ddma.js"></script>
+<h2 id="section5"><h1>macOS执行文件</h1>
+<pre><code>
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ========== 配置区 ==========
+# macOS 上 adb 通常通过 Homebrew 安装，路径由 brew 管理
+# 若你已手动安装 SDK，可将 ADB 改为实际路径，如 ~/Library/Android/sdk/platform-tools/adb
+# ============================
+
+info()  { echo -e "\033[32m[INFO]\033[0m $*"; }
+warn()  { echo -e "\033[33m[WARN]\033[0m $*"; }
+error() { echo -e "\033[31m[ERROR]\033[0m $*" >&2; exit 1; }
+
+# ---------- 1. 检测并安装 Homebrew（如果缺失） ----------
+if ! command -v brew &>/dev/null; then
+    info "未检测到 Homebrew，正在安装..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # 安装后刷新 PATH（Apple Silicon 默认路径）
+    if [[ -f "/opt/homebrew/bin/brew" ]]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    fi
+else
+    info "Homebrew 已就绪。"
+fi
+
+# ---------- 2. 安装 Android Platform Tools ----------
+if ! command -v adb &>/dev/null; then
+    info "安装 android-platform-tools..."
+    brew install android-platform-tools
+else
+    info "adb 已存在，跳过安装。"
+fi
+
+ADB="$(command -v adb)"
+[[ -n "$ADB" ]] || error "adb 安装失败，请手动运行: brew install android-platform-tools"
+info "adb 就绪: $ADB"
+
+# ---------- 3. 启动 ADB 并等待设备授权 ----------
+info "启动 ADB 并等待设备连接..."
+"$ADB" start-server >/dev/null 2>&1
+
+while true; do
+    DEV_STATE=""
+    while IFS= read -r line; do
+        [[ "$line" == *"unauthorized"* ]] && DEV_STATE="unauthorized"
+        [[ "$line" == *"device"* && "$line" != *"unauthorized"* ]] && DEV_STATE="ok"
+    done < <("$ADB" devices 2>/dev/null | tail -n +2)
+
+    if [[ "$DEV_STATE" == "ok" ]]; then
+        info "设备已连接并授权。"
+        break
+    elif [[ "$DEV_STATE" == "unauthorized" ]]; then
+        warn "检测到设备，但尚未授权！"
+        echo "  请在手机屏幕上点击「允许 USB 调试」，并勾选「始终允许」。"
+        echo "  若未弹窗，可尝试：拔插 USB；或在 Mac 上删除 ~/.android/adbkey* 后重启 adb 服务[citation:13]。"
+    else
+        echo "  未检测到设备，请用 USB 连接手机并开启 USB 调试..."
+    fi
+    sleep 5
+done
+
+# ---------- 4. 检查并解除被挂起的应用 ----------
+info "检查被挂起的第三方应用..."
+
+SUSPENDED_LIST=()
+while IFS= read -r pkg_line; do
+    PKG="${pkg_line#package:}"
+    if "$ADB" shell dumpsys package "$PKG" 2>/dev/null | grep -q "suspended=true"; then
+        SUSPENDED_LIST+=("$PKG")
+    fi
+done < <("$ADB" shell pm list packages -3 2>/dev/null)
+
+if [[ ${#SUSPENDED_LIST[@]} -eq 0 ]]; then
+    info "未发现被挂起的第三方应用。"
+else
+    info "共发现 ${#SUSPENDED_LIST[@]} 个被挂起的应用，开始解除..."
+    for pkg in "${SUSPENDED_LIST[@]}"; do
+        echo -n "  解除 $pkg ... "
+        if "$ADB" shell pm unsuspend "$pkg" 2>/dev/null; then
+            echo "成功"
+        else
+            echo "失败（可能需要 root 或设备管理权限）"
+        fi
+    done
+fi
+
+info "全部完成。"
+</code></pre>
+<script src="../qita/ddma.js"></script>
+<h2 id="section10"
+<h2 id="section6"><h1>Android</h1>
+<p>下载安装ashell测载，然后adb连接就不多多赘述了最后执行</p>
+<code><pre>
+adb shell pm unsuspend
+</pre></code>
+<script src="../qita/ddma.js"></script>
+<p>对了忘记说的在手机上有软件打不开软件包名获取命令是adb pm list packages或得到后添加上去</p>
+<code><pre>
+adb pm list packages
+</pre></code>
+<script src="../qita/ddma.js"></script>
+<p>获取到包名后然后就是比如</p>
+<code><pre>
+adb shell pm unsuspend com.xxx.yyy
+</pre></code>
+<script src="../qita/ddma.js"></script>
+<p>这样执行就可以了</p>
+<hr>
+<h2 id="section1"><h1>Android 11系统解决办法<h3>(包括Android 11及以上版本)</h3></h1>
+<button onclick="document.getElementById('section7').scrollIntoView()">
+  windwos
+</button>
+<button onclick="document.getElementById('section8').scrollIntoView()">
+  Linux
+<button onclick="document.getElementById('section9').scrollIntoView()">
+  macOS
+</button>
+<button onclick="document.getElementById('section10').scrollIntoView()">
+  Android
+</button>
+
+<h2 id="section7"><h1>windwos</h1>
+<code><pre>
+@echo off
+setlocal enabledelayedexpansion
+chcp 65001 >nul 2>&1
+title Android 限制解除工具（pm unsuspend 批量）
+
+:: ============================================================
+:: 1. 检查 ADB 是否可用
+:: ============================================================
+where adb >nul 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo [错误] 未检测到 adb 命令。
+    echo 请先安装 Android SDK Platform-Tools，并将 adb 所在目录加入系统 PATH。
+    echo 下载地址：https://developer.android.com/studio/releases/platform-tools
+    echo.
+    echo 是否现在打开下载页面？(Y/N)
+    set /p open_url=
+    if /i "!open_url!"=="Y" start https://developer.android.com/studio/releases/platform-tools
+    pause
+    exit /b 1
+)
+echo [OK] 已检测到 ADB。
+adb version
+echo.
+
+:: ============================================================
+:: 2. 无线调试连接引导
+:: ============================================================
+echo ============================================================
+echo                    无线调试连接
+echo ============================================================
+echo 请选择连接方式：
+echo   [1] 手机已通过 USB 连接（推荐，脚本自动启用无线调试）
+echo   [2] 使用“配对码”无线连接（Android 11+，无需 USB）
+echo   [3] 已手动无线连接，直接跳过
+set /p conn_choice=请输入序号 (默认 1)：
+
+if "!conn_choice!"=="" set conn_choice=1
+
+if "!conn_choice!"=="1" (
+    echo.
+    echo [提示] 请确保手机已通过 USB 连接电脑，并已开启“开发者选项 → USB 调试”。
+    adb devices
+    echo.
+    echo 正在启用 TCP/IP 无线调试（端口 5555）...
+    adb tcpip 5555
+    echo.
+    set /p phone_ip=请输入手机的 Wi-Fi IP 地址（例如 192.168.1.100）：
+    echo 正在连接 !phone_ip!:5555 ...
+    adb connect !phone_ip!:5555
+    echo.
+    echo [提示] 现在可以拔掉 USB 线，后续操作将通过无线进行。
+    pause
+) else if "!conn_choice!"=="2" (
+    echo.
+    echo [提示] 请在手机上进入：设置 → 开发者选项 → 无线调试 → 使用配对码配对设备。
+    echo 手机上会显示 IP、配对端口和 6 位配对码。
+    set /p pair_ip=请输入手机 IP（如 192.168.1.100）：
+    set /p pair_port=请输入配对端口（如 37123）：
+    set /p pair_code=请输入 6 位配对码：
+    echo 正在配对...
+    adb pair !pair_ip!:!pair_port! !pair_code!
+    echo.
+    echo 配对成功后，请再输入无线调试端口（无线调试主界面显示的“IP 地址和端口”中的端口号）：
+    set /p debug_port=请输入调试端口（如 43210）：
+    adb connect !pair_ip!:!debug_port!
+    pause
+) else (
+    echo [跳过] 使用当前已连接的设备。
+    adb devices
+)
+
+:: 确认设备在线
+echo.
+echo 当前设备列表：
+adb devices
+echo.
+
+:: ============================================================
+:: 3. 获取被 suspended 的应用列表
+:: ============================================================
+echo ============================================================
+echo              正在获取被限制（suspended）的应用
+echo ============================================================
+echo 请稍候...
+
+set "suspended_list="
+set "count=0"
+
+:: 方法 A：尝试 pm list packages --suspend（较新 Android 版本支持，速度快）
+for /f "tokens=2 delims=:" %%a in ('adb shell pm list packages --suspend 2^>nul ^| findstr /i "package:"') do (
+    set "pkg=%%a"
+    set "pkg=!pkg: =!"
+    if not "!pkg!"=="" (
+        set /a count+=1
+        set "suspended_list=!suspended_list! !pkg!"
+        echo   !count!. !pkg!
+    )
+)
+
+:: 方法 B：如果方法 A 没有结果，回退到逐个 dumpsys 检查（兼容性更好，但较慢）
+if !count! equ 0 (
+    echo [提示] --suspend 参数不可用或没有结果，将使用兼容模式逐个检查...
+    for /f "tokens=2 delims=:" %%a in ('adb shell pm list packages -a 2^>nul ^| findstr /i "package:"') do (
+        set "pkg=%%a"
+        set "pkg=!pkg: =!"
+        if not "!pkg!"=="" (
+            adb shell dumpsys package !pkg! 2>nul | findstr /i "suspended=true" >nul
+            if !errorlevel! equ 0 (
+                set /a count+=1
+                set "suspended_list=!suspended_list! !pkg!"
+                echo   !count!. !pkg!
+            )
+        )
+    )
+)
+
+if !count! equ 0 (
+    echo.
+    echo [结果] 未发现任何处于 suspended 状态的应用。
+    pause
+    exit /b 0
+)
+
+echo.
+echo 共发现 !count! 个被限制的应用。
+
+:: ============================================================
+:: 4. 逐个解除限制（pm unsuspend）
+:: ============================================================
+echo.
+echo ============================================================
+echo                    开始解除限制
+echo ============================================================
+echo 将对以上应用依次执行：adb shell pm unsuspend <包名> --user 0
+echo 是否继续？(Y/N)
+set /p confirm=
+if /i not "!confirm!"=="Y" (
+    echo 已取消。
+    pause
+    exit /b 0
+)
+
+echo.
+set "success=0"
+set "fail=0"
+for %%p in (!suspended_list!) do (
+    echo 正在解除：%%p
+    adb shell pm unsuspend %%p --user 0 >nul 2>&1
+    if !errorlevel! equ 0 (
+        echo   [成功] %%p
+        set /a success+=1
+    ) else (
+        echo   [失败] %%p（可能无需解除或设备不支持）
+        set /a fail+=1
+    )
+)
+
+echo.
+echo ============================================================
+echo                    操作完成
+echo ============================================================
+echo 成功：!success! 个
+echo 失败：!fail! 个
+echo.
+echo 建议重启手机或重新打开对应应用，使解除限制完全生效。
+pause
+exit /b 0
+</pre></code>
+<script src="../qita/ddma.js"></script>
+<h2 id="section8"><h1>Linux</h1>
+<code><pre>
+#!/usr/bin/env bash
+# Android 限制解除工具（Linux 版）
+# 功能：检查 ADB -> 无线调试连接 -> 列出 suspended 应用 -> 批量 pm unsuspend
+# 用法：chmod +x unlock_android.sh && ./unlock_android.sh
+
+set -u
+
+# ---------- 颜色 ----------
+RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'
+BLUE=$'\033[34m'; CYAN=$'\033[36m'; BOLD=$'\033[1m'; NC=$'\033[0m'
+
+info()  { echo "${CYAN}[信息]${NC} $*"; }
+ok()    { echo "${GREEN}[OK]${NC} $*"; }
+warn()  { echo "${YELLOW}[提示]${NC} $*"; }
+err()   { echo "${RED}[错误]${NC} $*"; }
+title() { echo; echo "${BOLD}${BLUE}============================================================${NC}"; echo "${BOLD}${BLUE} $*${NC}"; echo "${BOLD}${BLUE}============================================================${NC}"; }
+
+# ---------- 1. 检查 ADB ----------
+title "步骤 1/4：检查 ADB 环境"
+
+if ! command -v adb >/dev/null 2>&1; then
+    err "未检测到 adb 命令。"
+    warn "请先安装 Android SDK Platform-Tools，并将其加入 PATH。"
+    echo
+    if command -v apt >/dev/null 2>&1; then
+        echo "  Debian/Ubuntu:  sudo apt install android-tools-adb"
+    elif command -v dnf >/dev/null 2>&1; then
+        echo "  Fedora/RHEL:    sudo dnf install android-tools"
+    elif command -v pacman >/dev/null 2>&1; then
+        echo "  Arch/Manjaro:   sudo pacman -S android-tools"
+    elif command -v zypper >/dev/null 2>&1; then
+        echo "  openSUSE:       sudo zypper install android-tools"
+    fi
+    echo "  或下载官方 Platform-Tools：https://developer.android.com/studio/releases/platform-tools"
+    echo
+    read -rp "是否现在尝试自动安装？(y/N): " ans
+    if [[ "${ans,,}" == "y" ]]; then
+        if command -v apt >/dev/null 2>&1; then sudo apt install -y android-tools-adb
+        elif command -v dnf >/dev/null 2>&1; then sudo dnf install -y android-tools
+        elif command -v pacman >/dev/null 2>&1; then sudo pacman -S --noconfirm android-tools
+        elif command -v zypper >/dev/null 2>&1; then sudo zypper install -y android-tools
+        else err "无法识别包管理器，请手动安装。"; exit 1; fi
+        command -v adb >/dev/null 2>&1 || { err "安装后仍未找到 adb，请检查 PATH。"; exit 1; }
+    else
+        exit 1
+    fi
+fi
+
+ok "已检测到 ADB。"
+adb version | head -n 1
+echo
+
+# ---------- 2. 无线调试连接 ----------
+title "步骤 2/4：无线调试连接"
+
+echo "请选择连接方式："
+echo "  [1] 手机已通过 USB 连接（推荐，自动启用无线调试）"
+echo "  [2] 使用“配对码”无线连接（Android 11+，无需 USB）"
+echo "  [3] 已手动无线连接，直接跳过"
+read -rp "请输入序号 (默认 1): " conn_choice
+conn_choice="${conn_choice:-1}"
+
+case "$conn_choice" in
+  1)
+    warn "请确保手机已通过 USB 连接，并已开启“开发者选项 → USB 调试”。"
+    adb devices
+    echo
+    info "正在启用 TCP/IP 无线调试（端口 5555）..."
+    adb tcpip 5555
+    echo
+    read -rp "请输入手机的 Wi-Fi IP 地址（例如 192.168.1.100）: " phone_ip
+    [[ -n "$phone_ip" ]] || { err "IP 不能为空。"; exit 1; }
+    info "正在连接 ${phone_ip}:5555 ..."
+    adb connect "${phone_ip}:5555"
+    warn "现在可以拔掉 USB 线，后续操作将通过无线进行。"
+    ;;
+  2)
+    warn "请在手机上进入：设置 → 开发者选项 → 无线调试 → 使用配对码配对设备。"
+    echo "手机上会显示 IP、配对端口和 6 位配对码。"
+    read -rp "请输入手机 IP（如 192.168.1.100）: " pair_ip
+    read -rp "请输入配对端口（如 37123）: " pair_port
+    read -rp "请输入 6 位配对码: " pair_code
+    info "正在配对..."
+    adb pair "${pair_ip}:${pair_port}" "$pair_code"
+    echo
+    read -rp "配对成功后，请输入无线调试主界面显示的“调试端口”（如 43210）: " debug_port
+    adb connect "${pair_ip}:${debug_port}"
+    ;;
+  3)
+    info "使用当前已连接的设备。"
+    ;;
+  *)
+    err "无效选项。"; exit 1 ;;
+esac
+
+echo
+info "当前设备列表："
+adb devices
+
+# 确认至少一台设备处于 device 状态
+if ! adb devices | awk 'NR>1 && $2=="device"{found=1} END{exit !found}'; then
+    err "未检测到处于 device 状态的设备，请检查连接/授权。"
+    exit 1
+fi
+ok "设备已连接。"
+echo
+
+# ---------- 3. 获取被 suspended 的应用 ----------
+title "步骤 3/4：获取被限制（suspended）的应用"
+info "请稍候..."
+
+declare -a PKGS=()
+
+# 方法 A：pm list packages --suspended（新版本支持，速度快）
+while IFS= read -r line; do
+    pkg="${line#package:}"
+    pkg="${pkg%$'\r'}"
+    [[ -n "$pkg" ]] && PKGS+=("$pkg")
+done < <(adb shell pm list packages --suspended 2>/dev/null | grep -i '^package:')
+
+# 方法 B：兼容模式，解析 dumpsys package 输出
+if [[ ${#PKGS[@]} -eq 0 ]]; then
+    warn "--suspended 参数不可用或无结果，切换到兼容模式（解析 dumpsys）..."
+    while IFS= read -r pkg; do
+        pkg="${pkg%$'\r'}"
+        [[ -n "$pkg" ]] && PKGS+=("$pkg")
+    done < <(adb shell dumpsys package 2>/dev/null | awk '
+        /Package \[/ {
+            match($0, /Package \[[^]]+\]/);
+            pkg = substr($0, RSTART+9, RLENGTH-10);
+        }
+        /suspended=true/ { if (pkg != "") print pkg }
+    ' | sort -u)
+fi
+
+if [[ ${#PKGS[@]} -eq 0 ]]; then
+    ok "未发现任何处于 suspended 状态的应用，无需处理。"
+    exit 0
+fi
+
+echo
+ok "共发现 ${#PKGS[@]} 个被限制的应用："
+for i in "${!PKGS[@]}"; do
+    printf "  %2d. %s\n" "$((i+1))" "${PKGS[$i]}"
+done
+echo
+
+# ---------- 4. 批量解除限制 ----------
+title "步骤 4/4：解除限制（pm unsuspend）"
+echo "将对以上应用依次执行：adb shell pm unsuspend <包名> --user 0"
+read -rp "是否继续？(y/N): " confirm
+[[ "${confirm,,}" == "y" ]] || { warn "已取消。"; exit 0; }
+
+echo
+success=0; fail=0
+declare -a FAILED=()
+
+for pkg in "${PKGS[@]}"; do
+    printf "正在解除：%s ... " "$pkg"
+    if adb shell pm unsuspend "$pkg" --user 0 >/dev/null 2>&1; then
+        echo "${GREEN}成功${NC}"
+        ((success++))
+    else
+        echo "${RED}失败${NC}（可能无需解除或设备不支持）"
+ 
+</pre></code>
+<script src="../qita/ddma.js"></script>
+<h2 id="section9"><h1>macOS</h1>
+<code><pre>
+#!/usr/bin/env bash
+# Android 限制解除工具（macOS 版）
+# 兼容 macOS 自带 bash 3.2 / Homebrew bash 5.x
+# 功能：检查 ADB -> 无线调试连接 -> 列出 suspended 应用 -> 批量 pm unsuspend
+# 用法：chmod +x unlock_android_macos.sh && ./unlock_android_macos.sh
+
+set -u
+
+# ---------- 颜色 ----------
+RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'
+BLUE=$'\033[34m'; CYAN=$'\033[36m'; BOLD=$'\033[1m'; NC=$'\033[0m'
+
+info()  { echo "${CYAN}[信息]${NC} $*"; }
+ok()    { echo "${GREEN}[OK]${NC} $*"; }
+warn()  { echo "${YELLOW}[提示]${NC} $*"; }
+err()   { echo "${RED}[错误]${NC} $*"; }
+title() { echo; echo "${BOLD}${BLUE}============================================================${NC}"; echo "${BOLD}${BLUE} $*${NC}"; echo "${BOLD}${BLUE}============================================================${NC}"; }
+
+# bash 3.2 没有 ${var,,}，用 tr 转小写
+lower() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# ---------- 1. 检查 ADB ----------
+title "步骤 1/4：检查 ADB 环境"
+
+if ! command -v adb >/dev/null 2>&1; then
+    err "未检测到 adb 命令。"
+    warn "macOS 推荐通过 Homebrew 安装 Android Platform-Tools。"
+    echo
+
+    if ! command -v brew >/dev/null 2>&1; then
+        err "未检测到 Homebrew。"
+        echo "  请先安装 Homebrew："
+        echo '    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+        echo "  安装完成后重新运行本脚本。"
+        exit 1
+    fi
+
+    ok "已检测到 Homebrew：$(brew --version | head -n 1)"
+    read -rp "是否现在通过 Homebrew 安装 android-platform-tools？(y/N): " ans
+    if [[ "$(lower "$ans")" == "y" ]]; then
+        info "正在安装 android-platform-tools（cask）..."
+        if ! brew install --cask android-platform-tools; then
+            warn "cask 安装失败，尝试 formula 方式..."
+            brew install android-platform-tools || {
+                err "安装失败。请手动执行：brew install --cask android-platform-tools"
+                exit 1
+            }
+        fi
+        hash -r 2>/dev/null || true
+        command -v adb >/dev/null 2>&1 || {
+            err "安装后仍未找到 adb。请重启终端，或检查 PATH 是否包含 Homebrew 的 bin 目录。"
+            echo "  Apple Silicon: /opt/homebrew/bin"
+            echo "  Intel Mac:     /usr/local/bin"
+            exit 1
+        }
+    else
+        exit 1
+    fi
+fi
+
+ok "已检测到 ADB。"
+adb version | head -n 1
+echo
+
+# ---------- 2. 无线调试连接 ----------
+title "步骤 2/4：无线调试连接"
+
+echo "请选择连接方式："
+echo "  [1] 手机已通过 USB 连接（推荐，自动启用无线调试）"
+echo "  [2] 使用“配对码”无线连接（Android 11+，无需 USB）"
+echo "  [3] 已手动无线连接，直接跳过"
+read -rp "请输入序号 (默认 1): " conn_choice
+conn_choice="${conn_choice:-1}"
+
+case "$conn_choice" in
+  1)
+    warn "请确保手机已通过 USB 连接，并在手机上点“允许 USB 调试”。"
+    adb devices
+    echo
+    info "正在启用 TCP/IP 无线调试（端口 5555）..."
+    adb tcpip 5555
+    echo
+    read -rp "请输入手机的 Wi-Fi IP 地址（例如 192.168.1.100）: " phone_ip
+    [[ -n "$phone_ip" ]] || { err "IP 不能为空。"; exit 1; }
+    info "正在连接 ${phone_ip}:5555 ..."
+    adb connect "${phone_ip}:5555"
+    warn "现在可以拔掉 USB 线，后续操作将通过无线进行。"
+    ;;
+  2)
+    warn "请在手机上进入：设置 → 开发者选项 → 无线调试 → 使用配对码配对设备。"
+    echo "手机上会显示 IP、配对端口和 6 位配对码。"
+    read -rp "请输入手机 IP（如 192.168.1.100）: " pair_ip
+    read -rp "请输入配对端口（如 37123）: " pair_port
+    read -rp "请输入 6 位配对码: " pair_code
+    info "正在配对..."
+    adb pair "${pair_ip}:${pair_port}" "$pair_code"
+    echo
+    read -rp "配对成功后，请输入无线调试主界面显示的“调试端口”（如 43210）: " debug_port
+    adb connect "${pair_ip}:${debug_port}"
+    ;;
+  3)
+    info "使用当前已连接的设备。"
+    ;;
+  *)
+    err "无效选项。"; exit 1 ;;
+esac
+
+echo
+info "当前设备列表："
+adb devices
+
+if ! adb devices | awk 'NR>1 && $2=="device"{found=1} END{exit !found}'; then
+    err "未检测到处于 device 状态的设备，请检查连接/授权。"
+    exit 1
+fi
+ok "设备已连接。"
+echo
+
+# ---------- 3. 获取被 suspended 的应用 ----------
+title "步骤 3/4：获取被限制（suspended）的应用"
+info "请稍候..."
+
+declare -a PKGS=()
+
+# 方法 A：pm list packages --suspended（Android 11+ 支持，速度快）
+while IFS= read -r line; do
+    pkg="${line#package:}"
+    pkg="${pkg%$'\r'}"
+    [[ -n "$pkg" ]] && PKGS+=("$pkg")
+done < <(adb shell pm list packages --suspended 2>/dev/null | grep -i '^package:')
+
+# 方法 B：兼容模式，解析 dumpsys package（适用于旧版 Android）
+if [[ ${#PKGS[@]} -eq 0 ]]; then
+    warn "--suspended 参数不可用或无结果，切换到兼容模式（解析 dumpsys，可能较慢）..."
+    while IFS= read -r pkg; do
+        pkg="${pkg%$'\r'}"
+        [[ -n "$pkg" ]] && PKGS+=("$pkg")
+    done < <(adb shell dumpsys package 2>/dev/null | awk '
+        /Package \[/ {
+            match($0, /Package \[[^]]+\]/);
+            pkg = substr($0, RSTART+9, RLENGTH-10);
+        }
+        /suspended=true/ { if (pkg != "") print pkg }
+    ' | sort -u)
+fi
+
+if [[ ${#PKGS[@]} -eq 0 ]]; then
+    ok "未发现任何处于 suspended 状态的应用，无需处理。"
+    exit 0
+fi
+
+echo
+ok "共发现 ${#PKGS[@]} 个被限制的应用："
+i=0
+while [[ $i -lt ${#PKGS[@]} ]]; do
+    printf "  %2d. %s\n" "$((i+1))" "${PKGS[$i]}"
+    i=$((i+1))
+done
+echo
+
+# ---------- 4. 批量解除限制 ----------
+title "步骤 4/4：解除限制（pm unsuspend）"
+echo "将对以上应用依次执行：adb shell pm unsuspend <包名> --user 0"
+read -rp "是否继续？(y/N): " confirm
+[[ "$(lower "$confirm")" == "y" ]] || { warn "已取消。"; exit 0; }
+
+echo
+success=0
+fail=0
+declare -a FAILED=()
+
+for pkg in "${PKGS[@]}"; do
+    printf "正在解除：%s ... " "$pkg"
+    if adb shell pm unsuspend "$pkg" --user 0 >/dev/n
+</pre></code>
+<script src="../qita/ddma.js"></script>
